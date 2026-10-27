@@ -77,6 +77,28 @@ def main() -> int:
     app.setApplicationDisplayName("剪贴板直连播放器")
     app.setQuitOnLastWindowClosed(False)   # 最小化到托盘时窗口全隐藏也不能退出
 
+    # ---- 单实例守卫（必须在创建 bridge / 起线程之前）----
+    #
+    # 本程序的核心是「剪贴板监听线程 + 新链接就开 mpv」。跑两份的后果不是
+    # 弹两个一样的窗口那么轻：两个监听线程会各抓同一个链接，**同时开两个 mpv
+    # 播同一个视频**，还各自写一遍播放历史。
+    #
+    # 放这里而不是 main() 最前面的原因：QLocalServer 依赖 QApplication 的
+    # 事件循环，必须先有 app。但必须在 from ui.bridge import UiBridge 之前
+    # 返回，否则 import 过程中就可能读到配置、起日志。
+    from app.single_instance import SingleInstance
+    from ui.bridge import CONFIG_DIR as _CFG_DIR_FOR_LOCK
+
+    _single = SingleInstance(_CFG_DIR_FOR_LOCK)
+    if _single.notify_existing():
+        # 已经有实例在跑：先把它叫到前台，然后自己静默退出。
+        # 不弹任何提示框 —— 用户只是想「打开程序」，直接把已有窗口给他就行。
+        print("[i] BiliYTPlayer 已在运行，已唤回现有窗口。", flush=True)
+        return 0
+    if not _single.acquire():
+        print("[!] 单实例锁获取失败（可能是权限问题），按多实例继续运行。", file=sys.stderr)
+    app._dsh_single_instance = _single   # 保活 + 退出时 release
+
     # ---- 启动即应用已保存的深浅色（必须在 engine.load() 之前）----
     # Application.styleHints.colorScheme 单一开关同时驱动 Fluent 控件和 Theme.dark，
     # 晚于 load() 设置会让第一帧闪一下浅色再变深色，所以放在这里。
@@ -245,6 +267,20 @@ def main() -> int:
             tray.notify(APP_NAME, "已在后台监听剪贴板，复制链接即可播放")
     else:
         win.show()
+
+    # ---- 又点了一次程序图标：把已有窗口叫回来（而不是开第二份）----
+    # 复用 QML 侧已有的 trayShowRequested 处理（show + raise + requestActivate）。
+    # 若之前是最小化到托盘状态，用户体感就是「图标点一下就回来了」。
+    _single.activated.connect(bridge.trayShowRequested)
+
+    def _cleanup_on_quit():
+        """退出前释放单实例锁，否则下次启动要等管道超时。"""
+        try:
+            _single.release()
+        except Exception:
+            pass
+
+    app.aboutToQuit.connect(_cleanup_on_quit)
 
     return app.exec()
 

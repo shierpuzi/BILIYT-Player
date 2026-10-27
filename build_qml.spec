@@ -40,6 +40,7 @@ _hidden_imports = [
     "app.autostart",
     "app.tray",
     "app.theme",
+    "app.single_instance",
     "ui",
     "ui.bridge",
     "ui.settings_bridge",
