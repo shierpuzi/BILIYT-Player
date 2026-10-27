@@ -3,24 +3,34 @@
 > 复制 B 站 / YouTube 链接到剪贴板，自动用内置 mpv 播放。
 > 支持 B 站 DASH 直链、杜比视界、HDR 动态映射、YouTube 最高 4K 流、
 > **UP 主广告自动跳过**、**B 站弹幕**、**原生字幕（CC / AI）**。
+>
+> **v4.0：界面已从 tkinter 迁移到 PySide6 + QML**，Fluent 2 原生观感 + 弹簧动效，
+> 独立设置页面、系统托盘、开机自启、可调画质上限。详见 [MIGRATION.md](MIGRATION.md)。
 
 ## 架构
 
 ```
-bili_yt_player.pyw      GUI 入口（tkinter），剪贴板监听 + 工作线程（生产者-消费者）
-bili_clipboard_dolby.py 后端核心：B 站 API 鉴权 / WBI 签名 / DASH 流提取 / mpv 启动参数
-sponsorblock.py         广告跳过：片段查询 / 过滤 / 载荷构造 / 内嵌 Lua 跳过脚本
-danmaku.py              弹幕：下载 / deflate 解压 / XML 解析 / ASS 转换 / 缓存
-subtitle.py             原生字幕（CC / AI）：查询 / 下载 / ASS 转换
-mpv_osc.py              受管 OSC：给 osc.lua 打补丁（彩色进度条 + 去广告时长）
-osc_base.lua            基线 osc.lua（mpv v0.41.0-244-gaf9c81fa1，LGPLv2.1+）
-mpv-portable/mpv.exe    播放器（所有解码、渲染、色调映射在此完成）
-mpv-portable/yt-dlp.exe YouTube URL 解析（由 mpv 内置 ytdl_hook 调用）
-config/mpv.conf         mpv 渲染 / 同步 / 缓冲 / HDR 映射配置（参考副本）
-config/input.conf       mpv 快捷键配置（参考副本）
-config/sponsorblock.conf.example  广告跳过配置（参考副本）
-config/danmaku.conf.example       弹幕配置（参考副本）
-config/subtitle.conf.example      字幕配置（参考副本）
+bili_yt_player_qml.py    GUI 入口（PySide6 + QML），剪贴板监听 + 工作线程
+ui/bridge.py             业务层 ↔ QML 信号桥（线程安全）
+ui/Main.qml              主窗口：状态日志 / 播放历史 / 开关 / 按钮
+ui/settings/             FluentUI 风格独立设置页面（6 页签）
+ui/CloseDialog.qml       关闭询问（关闭程序 / 最小化到托盘）
+ui/euikit/               EUIKit 5 个弹簧组件
+app/app_config.py        general.conf（关闭行为 / 自启 / 画质）
+app/quality.py           B 站画质档位与挑流规则
+app/autostart.py         开机自启（HKCU Run）
+app/tray.py              系统托盘
+
+legacy/bili_yt_player.pyw  旧 tkinter 入口（保留，可回退）
+legacy/bili_clipboard_dolby.py 后端核心：B 站 API 鉴权 / WBI 签名 / DASH 流提取 / mpv 启动参数
+legacy/sponsorblock.py   广告跳过：片段查询 / 过滤 / 载荷构造 / 内嵌 Lua 跳过脚本
+legacy/danmaku.py        弹幕：下载 / deflate 解压 / XML 解析 / ASS 转换 / 缓存
+legacy/subtitle.py       原生字幕（CC / AI）：查询 / 下载 / ASS 转换
+legacy/mpv_osc.py        受管 OSC：给 osc.lua 打补丁（彩色进度条 + 去广告时长）
+legacy/osc_base.lua      基线 osc.lua（mpv v0.41.0-244-gaf9c81fa1，LGPLv2.1+）
+mpv-portable/mpv.exe     播放器（所有解码、渲染、色调映射在此完成）
+mpv-portable/yt-dlp.exe  YouTube URL 解析（由 mpv 内置 ytdl_hook 调用）
+config/*.conf            各配置文件的参考副本
 ```
 
 播放流程：剪贴板监听线程只做读取 + 正则匹配，检测到新链接入队；工作线程消费队列，调用 B 站 API 或 yt-dlp 解析出真实流地址，启动 mpv 播放。监听线程全程非阻塞。
@@ -35,22 +45,50 @@ config/subtitle.conf.example      字幕配置（参考副本）
 1. 从 **Releases** 下载二进制包（包含 `BiliYTPlayer.exe` + `mpv-portable/`）
 2. 解压后双击 `BiliYTPlayer.exe`
 3. 复制 B 站 / YouTube 视频链接到剪贴板，自动播放
-4. 主窗口有三个勾选框（广告跳过 / 弹幕 / 原生字幕）与三个设置按钮
+4. 主窗口有三个开关（广告跳过 / 弹幕 / 原生字幕）与「设置…」按钮
 5. mpv 快捷键：`q` 退出、`f` 全屏、`` ` `` 查看渲染统计、`n` 跳到下一广告片段、`Enter` 撤销跳过
 
 ### 主窗口功能
 
 | 控件 | 说明 |
 |------|------|
+| **状态日志** | 实时输出（初始化 / 播放 / 弹幕 / 跳过 / 错误） |
+| **播放历史** | 记录时间、来源、标题、画质与跳过概要；**双击任意条目即可重播** |
+| **暂停监听** | 临时停掉剪贴板监听，恢复后继续 |
+| **清空历史** | 清空播放历史列表 |
+| **设置…** | 打开独立设置页面（见下） |
 | **自动跳过 UP 主广告** | SponsorBlock 广告跳过总开关 |
-| **显示弹幕** | 弹幕总开关 |
-| **显示原生字幕** | B 站 CC / AI 字幕开关 |
-| **跳过设置…** | 逐分类选择跳过档位、撤销窗口、最短片段长度 |
-| **弹幕设置…** | 不透明度、字号、存活时长、显示区域、屏蔽词、清空缓存 |
-| **字幕设置…** | 对齐位置（九宫格）、距边距离、字号、颜色、边框样式 |
-| **播放历史** | 双击任意条目即可重播该视频 |
+| **显示弹幕** / **显示原生字幕** | 两个功能总开关 |
 
 所有设置**保存后播放下一个视频即生效**，无需重启。
+
+### 设置页面
+
+独立的 Fluent 风格设置窗口（左侧页签 + 右侧卡片），6 个页签：
+
+| 页签 | 内容 |
+|------|------|
+| **通用** | 「点击 × 之后」→ 关闭程序 / 最小化到托盘；是否弹询问框；**开机自启** |
+| **播放** | **画质上限**（自动 / 8K / 杜比视界 / HDR / 4K / 1080P60 / … / 360P） |
+| **弹幕** | 不透明度、字号、存活时长、显示区域、描边、字体、屏蔽词与屏蔽类型、清空缓存 |
+| **字幕** | 对齐位置（九宫格）、距边距离、字号、颜色、边框样式、恢复默认 |
+| **广告跳过** | 11 个分类逐档选择（自动 / 手动 / 仅进度条 / 禁用）+ 色彩预览、撤销窗口、最短片段 |
+| **B站账号** | SESSDATA 填写与在线校验（脱敏显示当前状态） |
+
+### 关闭行为
+
+点窗口右上角 `×` 时，默认弹出询问：
+
+```
+关闭 BiliYTPlayer
+你想关闭程序，还是让它在后台继续监听剪贴板？
+  ○ 关闭程序            — 停止剪贴板监听并退出
+  ● 最小化到托盘        — 继续在后台监听剪贴板，点托盘图标恢复
+  ☑ 以后不再显示这个询问
+```
+
+勾选「以后不再显示」并确定后，后续点 `×` 直接执行这次的选择，不再询问
+（可在「设置 → 通用」里改回询问）。托盘图标菜单：显示主窗口 / 设置 / 退出。
 
 ### 从源码运行
 
@@ -60,20 +98,28 @@ config/subtitle.conf.example      字幕配置（参考副本）
 
 # 2. 安装依赖
 pip install -r legacy/requirements.txt
+pip install PySide6==6.9.2
 
-# 3. 配置 B 站 SESSDATA（可选，未配置则游客权限）
-#    首次运行会弹出浏览器配置页，自动保存到 %APPDATA%\BiliYTPlayer\.env
+# 3. 配置 B 站 SESSDATA（可选，未配置则无法播放 B 站）
+#    首次运行会引导到「设置 → B站账号」，保存到 %APPDATA%\BiliYTPlayer\.env
 
-# 4. 运行
+# 4. 运行（QML 新界面）
+python bili_yt_player_qml.py
+
+#    旧 tkinter 界面仍可用于回退
 pythonw legacy/bili_yt_player.pyw
 ```
 
 ## 打包
 
 ```bash
-cd legacy
-.venv/Scripts/python.exe -m PyInstaller --noconfirm bili_yt_player.spec
+# QML 版（新）
+python -m PyInstaller --noconfirm build_qml.spec
 # 输出 dist/BiliYTPlayer.exe，与 mpv-portable/ 同级放置
+
+# tkinter 版（旧，回退用）
+cd legacy
+python -m PyInstaller --noconfirm bili_yt_player.spec
 ```
 
 ## 广告自动跳过（BilibiliSponsorBlock）

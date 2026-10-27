@@ -100,6 +100,14 @@ import requests                  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 import pyperclip                # noqa: E402
 
+# 挑流规则只有一份实现：app/quality.py（UI 设置页与播放链路共用）。
+# 从源码运行时本文件所在目录是 legacy/，app/ 在其上一级，需要补进 sys.path。
+try:
+    from app.quality import format_pick, pick_stream, stream_bandwidth
+except ImportError:  # pragma: no cover - 取决于运行/打包目录布局
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from app.quality import format_pick, pick_stream, stream_bandwidth
+
 
 # ============================================================================
 # 1. 常量 / 配置
@@ -583,11 +591,31 @@ def get_cid(session: requests.Session, bvid: str):
     return j["data"]["cid"], j["data"]["title"]
 
 
+def _unwrap_playurl(j: dict) -> dict:
+    """统一两个 playurl 端点的载荷位置。
+
+    x/player/wbi/playurl 把结果放 data；pgc/player/web/playurl 放 result（偶尔也放 data）。
+    """
+    payload = j.get("result")
+    if not isinstance(payload, dict) or not payload:
+        payload = j.get("data")
+    return payload if isinstance(payload, dict) else {}
+
+
 def get_playurl(session: requests.Session, bvid: str, cid: int,
-                img_key: str, sub_key: str) -> dict:
+                img_key: str, sub_key: str, qn: int = 126) -> dict:
+    """取 dash 数据，返回与端点无关的统一结构（dash / accept_quality 等）。
+
+    qn 是请求的画质档位（默认 126 = 最高请求值，旧调用方不传即维持原行为）。
+
+    番剧/影视（PGC）的 bvid+cid 在 x/player/wbi/playurl 上会返回
+    code=-404「啥都木有」——这是 PGC 内容不在普通投稿的 playurl 范围内，
+    必须回落到 pgc/player/web/playurl（同样的 WBI 签名，bvid+cid 足够，
+    不用 ep_id）。两条路径返回结构一致，调用方无需感知来源。
+    """
     params = {
         "bvid": bvid, "cid": cid,
-        "qn": 126, "fnver": 0, "fnval": 4048, "fourk": 1,
+        "qn": qn, "fnver": 0, "fnval": 4048, "fourk": 1,
     }
     signed = enc_wbi(params, img_key, sub_key)
     resp = session.get(
@@ -598,59 +626,118 @@ def get_playurl(session: requests.Session, bvid: str, cid: int,
     )
     resp.raise_for_status()
     j = resp.json()
-    if j.get("code") != 0:
-        raise RuntimeError(f"playurl 失败: {j.get('message')} (code={j.get('code')})")
+    code = j.get("code")
     data = j.get("data")
-    if not data:
-        raise RuntimeError("playurl data 为空，该视频不支持杜比品质或需大会员")
-    return data
+    if code == 0 and data:
+        return data
+
+    # ── PGC 回落：普通端点 -404（或空 data）时再试番剧专用端点 ──
+    signed = enc_wbi(params, img_key, sub_key)
+    resp = session.get(
+        "https://api.bilibili.com/pgc/player/web/playurl",
+        params=signed,
+        headers=COMMON_HEADERS,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    j2 = resp.json()
+    code2 = j2.get("code")
+    data2 = _unwrap_playurl(j2)
+    if code2 == 0 and data2:
+        return data2
+
+    if code != 0:
+        raise RuntimeError(
+            f"playurl 失败: {j.get('message')} (code={code})；"
+            f"PGC 端点同样失败: {j2.get('message')} (code={code2})"
+        )
+    raise RuntimeError("playurl data 为空，该视频不支持杜比画质或需大会员")
 
 
-def pick_dolby_streams(dash: dict):
+def _as_stream_list(v) -> list:
+    """把 dash 里「可能是 dict / list / None」的流字段统一成 list[dict]。
+
+    B 站不同视频/端点的形状不一致：flac.audio 是单个 dict，dash.audio 是 list，
+    dolby.audio / dolby.video 实测是 dict 也可能为 null —— 一律归一，避免 [0] KeyError。
+    """
+    if isinstance(v, dict):
+        return [v] if v else []
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, dict)]
+    return []
+
+
+def _stream_url(stream) -> str | None:
+    """取一条流的播放地址：base_url → baseUrl → backup_url[0] → backupUrl[0]。
+
+    内部流对象两套驼峰/下划线字段是混着给的（dolby 段只保证 base_url/baseUrl），
+    统一在这里兜住；全空返回 None，不抛。
+    """
+    if not isinstance(stream, dict):
+        return None
+    for key in ("base_url", "baseUrl"):
+        url = stream.get(key)
+        if url:
+            return str(url)
+    for key in ("backup_url", "backupUrl"):
+        backups = stream.get(key)
+        if isinstance(backups, str):
+            backups = [backups]
+        for url in backups or []:
+            if isinstance(url, str) and url:
+                return url
+    return None
+
+
+def pick_dolby_streams(dash: dict, max_qn: int = 0):
     """提取视频/音频流。
        优先普通最高清流(兼容性最好),杜比视界仅作备选(易黑屏)。
-       返回 (video_url, audio_url, vdesc, adesc)。
+       max_qn: 画质上限（0 = 不限），对应设置里的 720P/1080P 等偏好。
+       返回 (video_url, audio_url, vdesc, adesc)；脏数据不抛，最差返回 None。
     """
+    dash = dash if isinstance(dash, dict) else {}
+    raw_dolby = dash.get("dolby")
+    dolby = raw_dolby if isinstance(raw_dolby, dict) else {}
+
     video_url = audio_url = None
     vdesc = adesc = ""
 
-    dolby = dash.get("dolby") or {}
-
-    # ── 第一优先: 普通最高清视频(兼容性最好,不会黑屏) ──
-    vids = dash.get("video") or []
-    if vids:
-        best = sorted(vids, key=lambda x: (x.get("id", 0), x.get("bandwidth", 0)))[-1]
-        video_url = best.get("base_url") or (best.get("backup_url") or [None])[0]
-        vdesc = f"普通视频 id={best.get('id')} codec={best.get('codecs', '?')}"
-
-    # ── 普通最高码率音频 ──
-    auds = dash.get("audio") or []
-    if auds:
-        best = sorted(auds, key=lambda x: x.get("bandwidth", 0))[-1]
-        audio_url = best.get("base_url") or (best.get("backup_url") or [None])[0]
-        adesc = f"普通音频 id={best.get('id')}"
-
-    # ── FLAC 无损音频(如果可用,覆盖普通音频) ──
-    flac = dash.get("flac") or {}
-    fa = flac.get("audio")
-    if fa:
-        audio_url = fa.get("base_url") or (fa.get("backup_url") or [None])[0]
-        adesc = "FLAC 无损"
-
-    # ── 杜比全景声(如果可用,覆盖 FLAC) ──
-    da = dolby.get("audio")
-    if da:
-        a = da[0]
-        audio_url = a.get("base_url") or (a.get("backupUrl") or [None])[0]
-        adesc = "杜比全景声(Dolby Atmos/E-AC-3)"
+    # ── 视频: 普通流优先(兼容性最好,不会黑屏)，挑流规则见 app.quality.pick_stream ──
+    best, _why = pick_stream(_as_stream_list(dash.get("video")), max_qn)
+    if best is not None:
+        video_url = _stream_url(best)
+        vdesc = format_pick(best)
 
     # ── 杜比视界仅作为备选(易导致黑屏,不推荐自动使用) ──
-    dv = dolby.get("video")
-    if dv and not video_url:
-        # 只有找不到普通流时才用杜比视界
-        v = dv[0]
-        video_url = v.get("base_url") or (v.get("backupUrl") or [None])[0]
-        vdesc = "杜比视界(Dolby Vision) [兼容性警告]"
+    if not video_url:
+        dv, _why = pick_stream(_as_stream_list(dolby.get("video")), max_qn)
+        if dv is not None:
+            video_url = _stream_url(dv)
+            if video_url:
+                vdesc = "杜比视界(Dolby Vision) [兼容性警告]"
+
+    # ── 普通最高码率音频 ──
+    auds = _as_stream_list(dash.get("audio"))
+    if auds:
+        a = max(auds, key=stream_bandwidth)
+        audio_url = _stream_url(a)
+        adesc = f"普通音频 id={a.get('id')}"
+
+    # ── FLAC 无损音频(如果可用,覆盖普通音频) ──
+    raw_flac = dash.get("flac")
+    flac = raw_flac if isinstance(raw_flac, dict) else {}
+    fa = _as_stream_list(flac.get("audio"))
+    if fa:
+        url = _stream_url(max(fa, key=stream_bandwidth))
+        if url:
+            audio_url, adesc = url, "FLAC 无损"
+
+    # ── 杜比全景声(如果可用,覆盖 FLAC) ──
+    da = _as_stream_list(dolby.get("audio"))
+    if da:
+        url = _stream_url(max(da, key=stream_bandwidth))
+        if url:
+            audio_url, adesc = url, "杜比全景声(Dolby Atmos/E-AC-3)"
 
     return video_url, audio_url, vdesc, adesc
 
