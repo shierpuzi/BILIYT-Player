@@ -44,15 +44,26 @@ OSC_NAME = "osc_managed.lua"
 PAYLOAD_ENV = "BSPONSOR_PAYLOAD"
 
 #: 随本项目分发的基线 osc.lua（取自 mpv v0.41.0-244-gaf9c81fa1）
-#: 打包后该文件被放在 _MEIPASS 根目录（见 bili_yt_player.spec 的 _add_datas），
+#: 打包后该文件放在 _MEIPASS 根目录（见 spec 的 _add_datas），
 #: 因此除模块同级目录外，还要回退到 sys._MEIPASS。
 def _locate_base_osc() -> Path:
-    candidates = [Path(__file__).resolve().parent / "osc_base.lua"]
+    here = Path(__file__).resolve().parent
+    candidates = [here / "osc_base.lua"]
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
-        candidates.append(Path(meipass) / "osc_base.lua")
+        mp = Path(meipass)
+        # 两种打包布局都要覆盖：
+        #   (a) (src, ".")      → _MEIPASS/osc_base.lua
+        #   (b) (src, "legacy") → _MEIPASS/legacy/osc_base.lua
+        # QML 版用的是 (b)（legacy/ 整个目录作为 datas 目标），漏了这条就会
+        # 报「缺少基线 osc.lua，彩色进度条不可用」——打包后必然复现。
+        candidates.append(mp / "osc_base.lua")
+        candidates.append(mp / "legacy" / "osc_base.lua")
     if getattr(sys, "frozen", False):
-        candidates.append(Path(sys.executable).resolve().parent / "osc_base.lua")
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / "osc_base.lua")
+        candidates.append(exe_dir / "legacy" / "osc_base.lua")
+    # 源码运行且 legacy/ 在仓库根时，模块同级就是 legacy/（已覆盖）
     for c in candidates:
         try:
             if c.is_file():

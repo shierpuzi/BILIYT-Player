@@ -64,8 +64,55 @@ def _panic_log(exc: BaseException) -> Path:
     return log_path
 
 
+def _diag() -> int:
+    """--diag：打印所有运行时路径，用于排查打包后文件找不到的问题。"""
+    print("=" * 60)
+    print("BiliYTPlayer 诊断")
+    print("=" * 60)
+    print(f"frozen       : {getattr(sys, 'frozen', False)}")
+    print(f"sys.executable: {sys.executable}")
+    print(f"_MEIPASS     : {getattr(sys, '_MEIPASS', '(none)')}")
+    print(f"UI_DIR       : {UI_DIR}  exists={UI_DIR.is_dir()}")
+    print(f"CONFIG_DIR   : {Path(os.environ.get('APPDATA', str(Path.home()))) / APP_NAME}")
+
+    # 关键文件逐个查
+    for rel in ("ui/Main.qml", "ui/qmldir", "ui/theme.qml", "ui/euikit/qmldir",
+                "ui/settings/SettingsWindow.qml", "legacy/osc_base.lua"):
+        p = _RUNTIME_DIR / rel
+        print(f"  {rel:42s} exists={p.is_file()}")
+
+    # 后端模块与 BASE_OSC_PATH
+    for p in (str(_RUNTIME_DIR), str(_RUNTIME_DIR / "legacy")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    try:
+        import mpv_osc
+        print(f"mpv_osc.__file__ : {mpv_osc.__file__}")
+        print(f"BASE_OSC_PATH    : {mpv_osc.BASE_OSC_PATH}")
+        print(f"  exists         : {mpv_osc.BASE_OSC_PATH.is_file()}")
+    except Exception as e:
+        import traceback
+        print(f"import mpv_osc 失败: {e}")
+        traceback.print_exc()
+
+    try:
+        from app import app_config
+        print(f"app.app_config   : {app_config.__file__}")
+    except Exception as e:
+        print(f"import app.app_config 失败: {e}")
+
+    print("=" * 60)
+    return 0
+
+
 def main() -> int:
     autostart_boot = "--autostart" in sys.argv
+
+    # --diag：诊断模式，把关键路径打到 stdout 后退出。
+    # 打包后 --windowed 没有控制台，排查路径问题（osc_base.lua / ui / legacy）
+    # 时只能靠这个开关配合 `BiliYTPlayer.exe --diag > out.txt 2>&1`。
+    if "--diag" in sys.argv:
+        return _diag()
 
     # QQuickStyle 必须在 load() 之前设置（ui-kit/README.md:34-39）
     QQuickStyle.setStyle("FluentWinUI3")

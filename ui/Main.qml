@@ -225,6 +225,20 @@ ApplicationWindow {
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                    // hover 统一由 ListView 判定：indexAt() 只可能命中唯一一行，
+                    // 避免 delegate 复用时多行 containsMouse 残留 → 看起来像多选。
+                    property int hoveredIndex: -1
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton   // 只收 hover，不吃点击
+                        onPositionChanged: function(mouse) {
+                            histView.hoveredIndex = histView.indexAt(mouse.x, mouse.y)
+                        }
+                        onExited: histView.hoveredIndex = -1
+                    }
+
                     delegate: ESpringListDelegate {
                         required property int index
                         required property string time
@@ -238,6 +252,9 @@ ApplicationWindow {
                         isDark: Theme.dark
                         textColor: Theme.text
                         selected: ListView.isCurrentItem
+
+                        hoverManaged: true
+                        hoveredExternally: histView.hoveredIndex === index
 
                         onClicked: histView.currentIndex = index
                         onDoubleClicked: {
