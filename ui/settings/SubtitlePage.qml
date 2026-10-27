@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // 字幕 —— subtitle.conf
@@ -48,21 +47,21 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "位置与字号"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
         SettingRow {
             Layout.fillWidth: true
             label: "对齐位置"
-            ComboBox {
+            SettingsComboBox {
                 id: alignCombo
                 objectName: "alignmentCombo"
                 Layout.preferredWidth: 200
@@ -113,14 +112,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "颜色与边框"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -139,7 +138,7 @@ SettingsPage {
                 Layout.preferredHeight: 26
                 radius: 6
                 color: page.validColor(colorField.text) ? colorField.text : "transparent"
-                border.color: Theme.stroke
+                border.color: SettingsTheme.stroke
                 border.width: 1
             }
         }
@@ -159,7 +158,7 @@ SettingsPage {
                 Layout.preferredHeight: 26
                 radius: 6
                 color: page.validColor(backField.text) ? backField.text : "transparent"
-                border.color: Theme.stroke
+                border.color: SettingsTheme.stroke
                 border.width: 1
             }
         }
@@ -193,14 +192,14 @@ SettingsPage {
             Layout.preferredHeight: 1
             Layout.topMargin: 4
             Layout.bottomMargin: 4
-            color: Theme.stroke
+            color: SettingsTheme.stroke
         }
 
         Text {
             Layout.fillWidth: true
             text: "边框样式"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
         }
 
         ButtonGroup { id: borderGroup }

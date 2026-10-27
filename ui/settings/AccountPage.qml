@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // B站账号 —— .env 里的 SESSDATA
@@ -45,14 +44,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "当前登录态"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -64,22 +63,22 @@ SettingsPage {
                 Layout.preferredWidth: 10
                 Layout.preferredHeight: 10
                 radius: 5
-                color: page.configured ? Theme.ok : Theme.text3
+                color: page.configured ? SettingsTheme.ok : SettingsTheme.text3
                 Layout.alignment: Qt.AlignVCenter
             }
 
             Text {
                 Layout.fillWidth: true
                 text: page.configured ? "已配置" : "未配置（播放 1080P 以上画质会受限）"
-                color: page.configured ? Theme.ok : Theme.text2
-                font.pixelSize: Theme.bodySize
+                color: page.configured ? SettingsTheme.ok : SettingsTheme.text2
+                font.pixelSize: SettingsTheme.bodySize
             }
 
             Text {
                 objectName: "maskedLabel"
                 text: page.masked
-                color: Theme.text3
-                font.pixelSize: Theme.bodySize
+                color: SettingsTheme.text3
+                font.pixelSize: SettingsTheme.bodySize
                 font.family: "Consolas"
             }
         }
@@ -87,21 +86,21 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "更新 SESSDATA"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
         Text {
             Layout.fillWidth: true
             text: "浏览器登录 bilibili.com → F12 → Application → Cookies → www.bilibili.com → 复制 SESSDATA 的 Value"
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }

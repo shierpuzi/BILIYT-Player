@@ -123,7 +123,8 @@ def main():
     QQuickStyle.setStyle("FluentWinUI3")
     app = QGuiApplication(sys.argv[:1])
     engine = QQmlApplicationEngine()
-    engine.addImportPath(str(ui))
+    # 见 bili_yt_player_qml.py 的说明：addImportPath(ui) 会让 ui/ 被模块化加载一次，
+    # 与文件内的相对 import 冲突，导致主题单例求值两次、ComboBox 全部塌成 0。
     mock = MockBridge()          # 必须持引用：setContextProperty 不接管所有权
     engine.rootContext().setContextProperty("bridge", mock)
     engine.rootContext().setContextProperty("__forceScheme", scheme)

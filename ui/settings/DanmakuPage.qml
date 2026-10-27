@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // 弹幕 —— danmaku.conf
@@ -44,14 +43,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "外观与时长"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -155,14 +154,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "屏蔽类型"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 

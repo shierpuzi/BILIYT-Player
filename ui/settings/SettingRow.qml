@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 
 // ============================================================
 // SettingRow —— 一行设置项：「标签(+提示) | 控件」
@@ -38,15 +37,15 @@ RowLayout {
         Text {
             Layout.fillWidth: true
             text: root.label
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             elide: Text.ElideRight
         }
         Text {
             Layout.fillWidth: true
             visible: root.hint !== ""
             text: root.hint
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }

@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import ".."
 import "../euikit"
 
 // ============================================================
@@ -11,7 +10,7 @@ import "../euikit"
 // 根元素必须是 Window（不是 Dialog / ApplicationWindow），由 Python 侧
 // engine.load() 后调 open() 显示，见 ui-kit/CONTRACT.md。
 //
-// 深浅色跟随系统：Theme.* 给自定义容器上色，Fluent 控件自身由样式驱动。
+// 深浅色跟随系统：SettingsTheme.* 给自定义容器上色，Fluent 控件自身由样式驱动。
 // 未定义 settingsBridge 时（离屏预览/截图）退化为只读桩，不崩。
 // ============================================================
 Window {
@@ -43,19 +42,19 @@ Window {
     minimumWidth: 800
     minimumHeight: 540
     title: "设置"
-    color: Theme.windowBg
+    color: SettingsTheme.windowBg
 
     // 把 Theme 的文字/底色灌进 palette：Fluent 控件的 contentItem 读
     // control.palette.text，离屏（offscreen QPA 报 colorScheme=Unknown）时
     // 系统 palette 会退化成深色，不显式喂就会白底白字。
-    palette.window: Theme.windowBg
-    palette.windowText: Theme.text
-    palette.text: Theme.text
-    palette.buttonText: Theme.text
-    palette.base: Theme.card
-    palette.button: Theme.cardAlt
-    palette.highlight: Theme.accent
-    palette.highlightedText: Theme.dark ? "#1B1B1B" : "#FFFFFF"
+    palette.window: SettingsTheme.windowBg
+    palette.windowText: SettingsTheme.text
+    palette.text: SettingsTheme.text
+    palette.buttonText: SettingsTheme.text
+    palette.base: SettingsTheme.card
+    palette.button: SettingsTheme.cardAlt
+    palette.highlight: SettingsTheme.accent
+    palette.highlightedText: SettingsTheme.dark ? "#1B1B1B" : "#FFFFFF"
 
     readonly property var pageKeys: ["general", "playback", "danmaku",
                                      "subtitle", "sponsor", "account"]
@@ -95,13 +94,13 @@ Window {
         Rectangle {
             Layout.preferredWidth: 208
             Layout.fillHeight: true
-            color: Theme.cardAlt
+            color: SettingsTheme.cardAlt
 
             Rectangle {                     // 右侧分隔线
                 anchors.right: parent.right
                 width: 1
                 height: parent.height
-                color: Theme.stroke
+                color: SettingsTheme.stroke
             }
 
             ColumnLayout {
@@ -115,7 +114,7 @@ Window {
                     Layout.topMargin: 2
                     Layout.bottomMargin: 6
                     text: "设置"
-                    color: Theme.text
+                    color: SettingsTheme.text
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
                 }
@@ -163,7 +162,7 @@ Window {
                     Layout.fillWidth: true
                     Layout.leftMargin: 6
                     text: "保存后即刻生效（部分播放设置将在下一个视频中应用）。"
-                    color: Theme.text3
+                    color: SettingsTheme.text3
                     font.pixelSize: 10
                     wrapMode: Text.WordWrap
                 }
@@ -208,7 +207,7 @@ Window {
     ESpringToast {
         id: toast
         anchors.fill: parent
-        bgColor: Theme.dark ? "#3A3A3A" : "#2B2B2B"
+        bgColor: SettingsTheme.dark ? "#3A3A3A" : "#2B2B2B"
         textColor: "#FFFFFF"
     }
 

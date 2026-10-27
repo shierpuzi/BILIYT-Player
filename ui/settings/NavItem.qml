@@ -1,5 +1,4 @@
 import QtQuick
-import ".."
 
 // NavigationView 的一行页签：悬停底色 + 当前项左侧强调条
 Rectangle {
@@ -12,8 +11,8 @@ Rectangle {
     signal activated()
 
     height: 38
-    radius: Theme.radius
-    color: current ? Theme.sel : (hover.hovered ? Theme.hover : "transparent")
+    radius: SettingsTheme.radius
+    color: current ? SettingsTheme.sel : (hover.hovered ? SettingsTheme.hover : "transparent")
 
     Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -24,8 +23,8 @@ Rectangle {
         anchors.right: parent.right
         anchors.rightMargin: 8
         text: nav.label
-        color: Theme.text
-        font.pixelSize: Theme.bodySize
+        color: SettingsTheme.text
+        font.pixelSize: SettingsTheme.bodySize
         elide: Text.ElideRight
     }
 
@@ -37,7 +36,7 @@ Rectangle {
         width: 3
         height: nav.current ? 16 : 0
         radius: 1.5
-        color: Theme.accent
+        color: SettingsTheme.accent
         Behavior on height { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
     }
 

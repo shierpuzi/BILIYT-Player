@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // PageActions —— 页底动作条：状态文字（左）+ 主/次按钮 + 可选清缓存
@@ -27,7 +26,7 @@ RowLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignVCenter
         text: root.status
-        color: root.statusOk ? Theme.ok : Theme.danger
+        color: root.statusOk ? SettingsTheme.ok : SettingsTheme.danger
         font.pixelSize: 12
         wrapMode: Text.WordWrap
         maximumLineCount: 2

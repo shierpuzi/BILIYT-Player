@@ -104,7 +104,18 @@ def main() -> int:
     bridge._log(f"[*] 主题: {_theme_now}")
 
     engine = QQmlApplicationEngine()
-    engine.addImportPath(str(UI_DIR))
+    # 不要 addImportPath(UI_DIR)！
+    #
+    # 曾经加过这一行，后果很隐蔽：ui/qmldir 把 theme.qml 注册成单例，于是 ui/
+    # 会被当成「模块」加载一次；而 ui/settings/*.qml 里又写 `import ".."`
+    # 按「相对目录」解析，同一个目录被两套机制各加载一遍 → theme.qml 求值两次
+    # → 它 import QtQuick.Controls，触发 FluentWinUI3 的 Config 单例重新初始化
+    # → 所有 ComboBox 的 count/implicitHeight 归零，整个下拉框不画出来，
+    #   而且一条 QML 警告都没有。实测对照：加这行 qualityCombo count=0，
+    # 去掉后 count=11。
+    #
+    # 现在各文件都用相对 import（Main.qml 用 "euikit"/"."，settings 内部用
+    # "../euikit" 与自己的 qmldir 单例），相对解析本身就够，不需要 import path。
     engine.rootContext().setContextProperty("bridge", bridge)
 
     # ---- 设置窗口（独立页面，settings-agent 交付）----

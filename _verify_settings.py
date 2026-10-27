@@ -430,9 +430,11 @@ def verify_account(cfg_dir: Path, Bridge):
 # ============================================================================
 
 def verify_render():
-    print("\n-- 离屏渲染 --")
+    print("\n-- 离屏渲染（真实 SettingsBridge，不是桩）--")
     wrapper = ROOT / "ui" / "settings" / "_shot_wrapper.qml"
     check("_shot_wrapper.qml 存在", wrapper.is_file(), str(wrapper))
+    real = ROOT / "_verify_settings_render.py"
+    check("真实通路截图脚本存在", real.is_file(), str(real))
 
     # Fluent 样式的深浅色由 Application.styleHints.colorScheme 决定，offscreen
     # QPA 下不可写（恒为 Unknown → 控件按深色画，ComboBox/RadioButton 会截成空白），
@@ -445,18 +447,23 @@ def verify_render():
         out = ROOT / f"_settings_general_{scheme}.png"
         if out.exists():
             out.unlink()
-        cmd = [sys.executable, str(ROOT / "_shot.py"), str(wrapper),
-               str(out), "980", "720", scheme, "general"]
+        # 用真实 SettingsBridge 注入后再截图 —— 桩数据只是 QML 原生 JS 对象，
+        # 永远「数据是好的」，测不出「真实 bridge → QML QJSValue」通路的毛病
+        # （ComboBox 全空那个 bug 就是这么漏掉的）。
+        cmd = [sys.executable, str(real), "general", str(out), scheme]
         try:
             proc = subprocess.run(cmd, cwd=str(ROOT), env=env, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=90)
+                                  encoding="utf-8", errors="replace", timeout=120)
             blob = (proc.stdout or "") + (proc.stderr or "")
         except subprocess.TimeoutExpired:
-            check(f"渲染 {scheme} 未超时", False, "90s 未结束")
+            check(f"渲染 {scheme} 未超时", False, "120s 未结束")
             continue
         loaded = "LOAD FAIL" not in blob
         saved = out.is_file() and out.stat().st_size > 2000
+        combos_ok = "ALL PASS" in blob
         check(f"渲染 {scheme} LOAD 成功", loaded, blob.strip().splitlines()[:3])
+        check(f"渲染 {scheme} ComboBox 全部可用（真实 bridge）", combos_ok,
+              [ln for ln in blob.splitlines() if ln.startswith("FAIL")][:4])
         check(f"渲染 {scheme} 截图落盘", saved,
               f"size={out.stat().st_size if out.exists() else 0}")
         if saved:
@@ -582,6 +589,35 @@ def verify_qml_roundtrip(cfg_dir: Path):
     check("导航栏提示不再用旧文案",
           not [o for o in win.findChildren(object)
                if "改完保存即生效" in str(o.property("text") or "")], "")
+
+    # ---- ComboBox 必须真的可用（真实 bridge 通路回归守卫）----
+    # 这是「设置页所有下拉框消失」那个 bug 的守卫：QJSValue 经 property var
+    # 转发、以及 ui/ 被 addImportPath 重复解析时，ComboBox 会 count=0 且
+    # implicitHeight=0（整个框不画出来，且没有任何 QML 警告）。
+    def combos_usable_on(page_key: str):
+        win.setProperty("currentKey", page_key)
+        for _ in range(3):
+            app.processEvents()
+        found = [o for o in win.findChildren(object)
+                 if "ComboBox" in o.metaObject().className()]
+        usable = [c for c in found
+                  if c.property("count") > 0 and c.property("implicitHeight") > 0]
+        return len(found), len(usable), sorted({c.property("count") for c in found})
+
+    for key, want_min in (("general", 1), ("playback", 1), ("subtitle", 1)):
+        n, ok_n, counts = combos_usable_on(key)
+        check(f"{key} 页 ComboBox 全部可用（{ok_n}/{n}）",
+              n >= want_min and ok_n == n, f"counts={counts}")
+
+    win.setProperty("currentKey", "playback")
+    for _ in range(3):
+        app.processEvents()
+    qc = [o for o in win.findChildren(object) if o.property("objectName") == "qualityCombo"]
+    if qc:
+        eq("qualityCombo 有 11 档（真实 bridge 数据）", qc[0].property("count"), 11)
+        eq("qualityCombo 高度正常（不是 0）", qc[0].property("implicitHeight") > 0, True)
+    else:
+        check("qualityCombo 存在", False, "找不到")
 
     win.close()
     engine.deleteLater()

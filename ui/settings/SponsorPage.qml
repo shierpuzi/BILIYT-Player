@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // 广告跳过 —— sponsorblock.conf
@@ -55,14 +54,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "片段类别与跳过方式"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -75,21 +74,21 @@ SettingsPage {
             Text {
                 Layout.preferredWidth: 190
                 text: "类别"
-                color: Theme.text2
+                color: SettingsTheme.text2
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
             }
             Text {
                 Layout.preferredWidth: 170
                 text: "跳过方式"
-                color: Theme.text2
+                color: SettingsTheme.text2
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
             }
             Text {
                 Layout.fillWidth: true
                 text: "进度条颜色 / 说明"
-                color: Theme.text2
+                color: SettingsTheme.text2
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
             }
@@ -98,7 +97,7 @@ SettingsPage {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.stroke
+            color: SettingsTheme.stroke
         }
 
         ColumnLayout {
@@ -122,12 +121,12 @@ SettingsPage {
                     Text {
                         Layout.preferredWidth: 190
                         text: catRow.name
-                        color: Theme.text
-                        font.pixelSize: Theme.bodySize
+                        color: SettingsTheme.text
+                        font.pixelSize: SettingsTheme.bodySize
                         elide: Text.ElideRight
                     }
 
-                    ComboBox {
+                    SettingsComboBox {
                         Layout.preferredWidth: 170
                         textRole: "label"
                         valueRole: "key"
@@ -144,14 +143,14 @@ SettingsPage {
                         Layout.preferredHeight: 20
                         radius: 4
                         color: catRow.swatch
-                        border.color: Theme.stroke
+                        border.color: SettingsTheme.stroke
                         border.width: 1
                     }
 
                     Text {
                         Layout.fillWidth: true
                         text: catRow.desc
-                        color: Theme.text3
+                        color: SettingsTheme.text3
                         font.pixelSize: 11
                         elide: Text.ElideRight
                     }
@@ -162,14 +161,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "选项"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 

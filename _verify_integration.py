@@ -163,7 +163,8 @@ def main():
 
     # ---------- 9. QML 全链路加载 ----------
     engine = QQmlApplicationEngine()
-    engine.addImportPath(str(UI))
+    # 见 bili_yt_player_qml.py 的说明：addImportPath(ui) 会让 ui/ 被模块化加载一次，
+    # 与文件内的相对 import 冲突，导致主题单例求值两次、ComboBox 全部塌成 0。
     bridge2 = UiBridge()
     sb2 = SettingsBridge(tmpdir)          # 必须持引用：setContextProperty 不接管所有权，
                                           # 被 GC 后 QML 侧会看到 null

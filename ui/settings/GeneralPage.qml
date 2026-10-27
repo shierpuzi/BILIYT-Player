@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // 通用 —— 外观主题 / 关闭行为 / 启动设置
@@ -29,14 +28,14 @@ SettingsPage {
     // 放在最上面：这是整页唯一「保存后整个窗口立刻变样」的项，先换色更自然
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "外观主题"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -87,7 +86,7 @@ SettingsPage {
         Text {
             Layout.fillWidth: true
             text: "「跟随系统」会跟着 Windows 的应用模式自动切换。"
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }
@@ -96,14 +95,14 @@ SettingsPage {
     // ------------------------------------------------------------ 关闭行为
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "关闭主窗口时"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -143,7 +142,7 @@ SettingsPage {
             Layout.topMargin: 2
             visible: page.cfg.close_action === "ask"
             text: "当前配置是每次都询问；选定一项并保存后才会固定行为。"
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }
@@ -153,7 +152,7 @@ SettingsPage {
             Layout.preferredHeight: 1
             Layout.topMargin: 4
             Layout.bottomMargin: 4
-            color: Theme.stroke
+            color: SettingsTheme.stroke
         }
 
         CheckBox {
@@ -166,7 +165,7 @@ SettingsPage {
         Text {
             Layout.fillWidth: true
             text: "取消勾选后，下次关闭将直接执行上述选择，不再弹窗提示。"
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }
@@ -175,14 +174,14 @@ SettingsPage {
     // ------------------------------------------------------------ 启动设置
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "启动设置"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -190,7 +189,7 @@ SettingsPage {
             Layout.fillWidth: true
             label: "自动启动"
 
-            ComboBox {
+            SettingsComboBox {
                 id: autoCombo
                 objectName: "autostartCombo"
                 Layout.preferredWidth: 220
@@ -218,13 +217,13 @@ SettingsPage {
                 Layout.preferredHeight: 8
                 radius: 4
                 Layout.alignment: Qt.AlignVCenter
-                color: page.cfg.autostart_enabled ? Theme.ok : Theme.text3
+                color: page.cfg.autostart_enabled ? SettingsTheme.ok : SettingsTheme.text3
             }
 
             Text {
                 objectName: "autostartStatus"
                 text: page.autostartText()
-                color: page.cfg.autostart_enabled ? Theme.ok : Theme.text3
+                color: page.cfg.autostart_enabled ? SettingsTheme.ok : SettingsTheme.text3
                 font.pixelSize: 11
             }
         }

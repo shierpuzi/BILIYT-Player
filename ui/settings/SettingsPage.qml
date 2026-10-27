@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 
 // ============================================================
 // SettingsPage —— 所有设置页的公共外框
@@ -62,7 +61,7 @@ Flickable {
 
     ColumnLayout {
         id: column
-        width: Math.min(root.width - 48, Theme.pageMaxW)
+        width: Math.min(root.width - 48, SettingsTheme.pageMaxW)
         x: Math.max(24, (root.width - width) / 2)
         y: 22
         spacing: 10
@@ -70,7 +69,7 @@ Flickable {
         Text {
             Layout.fillWidth: true
             text: root.title
-            color: Theme.text
+            color: SettingsTheme.text
             font.pixelSize: 20
             font.weight: Font.DemiBold
         }
@@ -80,7 +79,7 @@ Flickable {
             Layout.bottomMargin: 6
             visible: root.subtitle !== ""
             text: root.subtitle
-            color: Theme.text2
+            color: SettingsTheme.text2
             font.pixelSize: 12
             wrapMode: Text.WordWrap
         }

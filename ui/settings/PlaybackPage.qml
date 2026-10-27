@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ".."
 import "../euikit"
 
 // 画质 —— general.conf 的 quality（上限档位）
@@ -22,14 +21,14 @@ SettingsPage {
 
     ESpringCard {
         Layout.fillWidth: true
-        cardColor: Theme.card
-        borderColor: Theme.stroke
+        cardColor: SettingsTheme.card
+        borderColor: SettingsTheme.stroke
 
         Text {
             Layout.fillWidth: true
             text: "画质上限"
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
+            color: SettingsTheme.text
+            font.pixelSize: SettingsTheme.bodySize
             font.weight: Font.DemiBold
         }
 
@@ -38,7 +37,7 @@ SettingsPage {
             label: "最高档位"
             hint: "「自动」= 请求账号能拿到的最高画质"
 
-            ComboBox {
+            SettingsComboBox {
                 id: qualityCombo
                 objectName: "qualityCombo"
                 Layout.preferredWidth: 260
@@ -59,7 +58,7 @@ SettingsPage {
         Text {
             Layout.fillWidth: true
             text: "选低于视频实际画质的档位时，实际播放会降到该档位；选高于视频的档位不会报错，只会回落到最好那份。"
-            color: Theme.text3
+            color: SettingsTheme.text3
             font.pixelSize: 11
             wrapMode: Text.WordWrap
         }

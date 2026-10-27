@@ -4,8 +4,12 @@ import QtQuick.Controls
 // ============================================================
 // 离屏截图用的包装层（开发期，不进发行包）
 //
-// `_shot.py` 不注入任何上下文属性，而 SettingWindow 里的引用全是
-// `settingsBridge`，所以这里把 settingsBridge 换成桩，并强制显示某个页签。
+// **优先使用真实 settingsBridge**：_verify_settings.py 用 `--render` 模式跑
+// 子进程时会注入真实的 SettingsBridge，这条通路才和 exe 里一致。
+// 只有裸跑 `_shot.py`（不注入任何上下文属性）时才退回下面的桩。
+//
+// 教训：之前这里只有桩，桩是 QML 原生 JS 对象，永远「数据是好的」，
+// 所以 ComboBox 全空那种真实通路 bug 一张截图也测不出来。
 //
 // 页签取自 Qt.application.arguments 的第 7 个参数（_shot.py 传的宽/高/方案
 // 之后还会多出来一个），缺省显示「通用」：
@@ -18,7 +22,9 @@ import QtQuick.Controls
 SettingsWindow {
     id: wrapper
 
-    mockBridge: stub
+    // 有真实 bridge 就用真的（mockBridge = null 时 SettingsWindow 自己回落）
+    mockBridge: (typeof settingsBridge !== "undefined" && settingsBridge !== null)
+                ? null : stub
     initialPage: {
         // argv: [0]=_shot.py [1]=qml [2]=png [3]=w [4]=h [5]=scheme [6]=页签
         var a = Qt.application.arguments
