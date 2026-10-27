@@ -255,6 +255,33 @@ resolve_episode() 拿到的 bvid/cid 正确
 14 个热门视频样本 + 6 个 8K/HDR/杜比样本全部 `pick == accept_quality[0]`，
 说明 UGC 侧本来就没坏 —— 用户的感知问题来自 PGC 与画质上限缺失。
 
+### 附：对照社区接口文档的复核（`bilibili-API-collect`）
+
+有人问「GitHub 上有没有分享相关接口」，查过了。社区文档
+（[`bilibili-API-collect/docs/video/videostream_url.md`](https://github.com/pskdje/bilibili-API-collect/blob/main/docs/bangumi/videostream_url.md)）
+给出的 `fnval` 位标识与我们用的值对照：
+
+| 位 | 含义 | `fnval=4048` |
+|---|---|---|
+| 16 | DASH 格式 | ✅ |
+| 64 | HDR | ✅ |
+| 128 | 4K | ✅ |
+| 256 | 杜比音频 | ✅ |
+| 512 | 杜比视界 | ✅ |
+| 1024 | 8K | ✅ |
+| 2048 | AV1 | ✅ |
+
+`4048 = 0b111111010000`，**除 MP4(1) 外全部开启**，无需修改。
+
+文档另称「8K 需要 `qn=127`」，而本项目一直发 `qn=126`。**实测证伪**：
+对 8K / 杜比 / 普通三类样本各跑 `qn=126` 与 `qn=127`，`accept_quality` 与
+`dash.video` 的 id 集合**完全一致**（`[127,125,120,116,…]` 都返回）。
+所以 `qn` 不裁返回集合（与前面 `max_qn` 的结论互相印证），保持 `qn=126`。
+
+结论：没有遗漏的「更高级接口」。真正缺的只有 PGC 端点（已修）与本地的画质上限过滤（已加）。
+注：`126`（杜比视界）与 `127`（8K）是否真能取到，最终取决于账号是否有大会员、
+以及视频本身是否提供该档位 —— 这是 B站 侧的权限判定，不是客户端能绕过的。
+
 ## 6. 验收标准对照
 
 | 项 | 标准 | 状态 |
@@ -266,7 +293,7 @@ resolve_episode() 拿到的 bvid/cid 正确
 | 设置页 | 打开、改值、保存、重开读到新值 | ✅ 实测（128 项 + 6 页切换） |
 | SESSDATA 配置 | 未配置时引导到设置页账号页签 | ✅ |
 | 动效 | 按钮缩放回弹、卡片入场、Toast | ✅（EUUIKit spring 2.5/0.25） |
-| 深浅色 | 跟随系统 | ✅（`Theme.dark` ← `styleHints.colorScheme`） |
+| 深浅色 | 跟随系统 | ✅（`Theme.dark` ← `styleHints.colorScheme`，已实测信号真的触发） |
 | exe 体积 | ≤ 50 MB | ⏳ 见第 7 节 |
 | Linux | 能起来 | ✅（`QQuickStyle` 保留；无 DISPLAY 时自动 `offscreen` 兜底） |
 
@@ -323,15 +350,57 @@ resolve_episode() 拿到的 bvid/cid 正确
    `isinstance(data, dict)` 恒为 False → 所有字段被静默丢弃，表现为「点保存没反应也不报错」。
    `settings_bridge.py` 加了 `_as_dict()` 走 `toVariant()`。
 
+8. **`app/tray.py` 缺 `@Slot`，QML 调不到。**
+   裸 `def show/hide/setTip/notify` 在 Python 侧能调，但 QML 只能调用注册到元对象
+   系统的方法，运行时抛 `Property 'hide' of object Tray(...) is not a function`
+   → 退出/最小化到托盘的图标操作全部静默失效。加了 `@Slot()/@Slot(str)/@Slot(str,str)`
+   （`notify` 同时注册 2 参与 3 参两个签名）。
+
+9. **PyInstaller 只列子模块不会打包含本体。**
+   `hiddenimports` 里只写 `app.app_config` / `app.quality` 等子模块时，`app` 包本体
+   不会被收集。后果是**打包后的 exe 启动即静默无窗口**（`--windowed` 下 import 失败
+   没有任何可见输出，只有一个没人看的 panic log）。修法：`hiddenimports` 同时列出
+   `"app"` 和 `"ui"`。
+
+10. **`sys._MEIPASS`：打包后路径全变了。**
+    `Path(__file__).parent` 在 PyInstaller 下指向临时解包目录的子路径，`ui/` 与
+    `legacy/` 都取不到。`bili_yt_player_qml.py` 与 `ui/bridge.py` 都要用
+    `Path(sys._MEIPASS)` 作为根。这也是「源码能跑、exe 起来没窗口」的第二个原因。
+
+11. **本机 site-packages 的无关重包会被 hook 全拖进来。**
+    本机装了 numpy/scipy/matplotlib/PyQt5/pygame/PIL/cryptography/pandas，
+    PyInstaller 的 hook 顺着模块图把它们全收了：第一版 exe **123 MB**，
+    其中 `numpy.libs/libopenblas*.dll` 单个 36 MB，还混进了整个 PyQt5 与 pygame。
+    `excludes` 只影响 Python 模块、对已复制的 DLL/pyd 无效，所以除了写 `excludes`
+    还要按路径前缀再滤一遍 `a.binaries` / `a.datas`（`_DROP_PATH_PREFIXES` /
+    `_drop_path()`）。修完 123 MB → **53 MB**。
+
+12. **样式过滤会误删 Controls 根文件与 `impl/` 目录。**
+    `QtQuick/Controls/<Style>` 的判定原本对 `Controls/` 根下的
+    `qtquickcontrols2plugin.dll` / `qmldir` / `plugins.qmltypes` 也生效，把模块本体
+    当样式删了；`impl/`（所有 Fluent 控件的实现）同样被误删。
+    现象：exe 能启动但 Main.qml 加载失败，`console=False` 下只能从 panic log 看到。
+    修法：只有 tail 里**含 `/`**（即确实在子目录）才当样式名；新增
+    `_KEEP_EXTRA_DIRS = ("impl", "designer")` 白名单。
+
+13. **GDI 截图两个坑**（仅影响验证脚本，不影响产品）：
+    BitBlt 的像素是自下而上的，写 BMP 不翻行序会上下镜像；更关键的是
+    `BitBlt(screen)` 抓的是**屏幕上最上层**的内容，exe 窗口被遮挡时会抓到别人的窗口。
+    正解是 `PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)`。
+
 ## 7. 已知遗留
 
-1. **exe 体积未实测**。`build_qml.spec` 的手动 binaries 过滤按
-   `ui-kit/README.md` 实测数据写成（不裁 150 MB / 全裁 ≈48.8 MB），但本机未跑
-   `pyinstaller` 完整构建。首次构建请核对 `dist/BiliYTPlayer.exe` 大小，
-   若 > 50 MB 说明 `_DROP_FRAGMENTS` 漏了某个模态（用 `pyi-archive_viewer` 查大头）。
-2. **托盘图标只验证了「不崩 + 3 项菜单 + 16/32 尺寸」**。
-   离屏平台下 `QSystemTrayIcon.isSystemTrayAvailable()` 返回 `False`，真机任务栏
-   出现图标这条未实测。
+1. **exe 已实测构建并运行**：`dist/BiliYTPlayer.exe` = **53.20 MB**，
+   在只有 `mpv-portable/` 同级的环境里启动成功、真实联网完成 B站鉴权、
+   进入「监听中」、主窗口与设置窗口都正常渲染（`PrintWindow` 截图确认）。
+   距离 `MIGRATION_PROMPT` 的 ≤50 MB 目标还差 3 MB —— 剩余大头都是必需件
+   （`Qt6Core.dll` 9.6 MB、`Qt6Gui.dll` 9.0 MB、`Qt6Widgets.dll` 6.2 MB、
+   `Qt6Quick.dll` 6.1 MB、`python311.dll` 5.5 MB、`Qt6Qml.dll` 5.1 MB）。
+   想再挤可以：关掉 `Qt6Widgets`（改用 `QGuiApplication` + 自绘托盘菜单，
+   但要重写 `app/tray.py`），或启用 UPX 压缩（本机未装 UPX）。
+2. **托盘图标只验证了「不崩 + 3 项菜单 + 16/32 尺寸 + Slot 已注册」**。
+   offscreen 平台下 `QSystemTrayIcon.isSystemTrayAvailable()` 返回 `False`，
+   真机任务栏出现图标这条未实测。
 3. **mpv 真实起窗未实测**：播放链路已用记录器替换 `launch_player` 验证到底
    （直链/标题/音轨/弹幕/SponsorBlock/画质上限全部正确），但「mpv 窗口真的播起来」
    与 `launch_player` 的参数构造仍需实机跑一次（参数与原版逐字一致）。

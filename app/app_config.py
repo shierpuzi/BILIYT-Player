@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
     "autostart_mode": "none",
     # B 站画质偏好，见 app/quality.py 的 QUALITY_OPTIONS
     "quality": "auto",
+    # 深浅色：system = 跟随系统；light = 强制浅色；dark = 强制深色
+    # 合法值与归一化统一由 app/theme.py 负责（THEME_OPTIONS / normalize），
+    # 这里只原样存取字符串，避免两处各定义一份取值表。
+    "theme": "system",
 }
 
 _CONFIG_TEMPLATE = """\
@@ -36,11 +40,20 @@ autostart_mode = none
 
 # B 站画质偏好：auto = 最高可用，其余为上限（80 = 1080P，120 = 4K，127 = 8K）
 quality = auto
+
+# 深浅色：system = 跟随系统；light = 浅色；dark = 深色
+theme = system
 """
 
 
 def _config_path(config_dir: Path) -> Path:
     return Path(config_dir) / "general.conf"
+
+
+def _mod_theme():
+    """延迟导入 app.theme：它是可选的（没有 GUI 时不该拖累配置读写）。"""
+    from app import theme
+    return theme
 
 
 def _coerce(key: str, raw: str):
@@ -71,7 +84,13 @@ def load_config(config_dir: Path, log=None) -> dict:
                 continue
             k, _, v = line.partition("=")
             k = k.strip()
-            if k in DEFAULT_CONFIG:
+            if k == "theme":
+                # 归一化交给 app/theme.py（含别名容错），读不到就保留默认
+                try:
+                    cfg["theme"] = _mod_theme().normalize(v)
+                except Exception:
+                    cfg["theme"] = DEFAULT_CONFIG["theme"]
+            elif k in DEFAULT_CONFIG:
                 cfg[k] = _coerce(k, v)
     except (OSError, UnicodeDecodeError) as e:
         if log:

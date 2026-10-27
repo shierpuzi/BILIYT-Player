@@ -28,7 +28,12 @@ from pathlib import Path
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
 # ---- 后端（零改动）----
-_ROOT = Path(__file__).resolve().parent.parent
+# 源码运行：仓库根；PyInstaller：sys._MEIPASS（datas 把 legacy/ 解到这里）。
+# 两个路径都要进 sys.path，bridge 用延迟 import 拉 legacy 下的后端模块。
+if getattr(sys, "frozen", False):
+    _ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+else:
+    _ROOT = Path(__file__).resolve().parent.parent
 for _p in (str(_ROOT), str(_ROOT / "legacy")):
     if _p not in sys.path:
         sys.path.insert(0, _p)

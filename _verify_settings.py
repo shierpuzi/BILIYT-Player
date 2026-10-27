@@ -46,6 +46,8 @@ _APPLIED: list = []
 
 def _install_autostart_stub():
     fake = types.ModuleType("app.autostart")
+    # 注意：这里刻意用 app/autostart.py 的原始标签（"仅手动启动"/"开机自启"），
+    # settings_bridge 会覆盖成"禁止自启"/"开启自启" —— 正好验证覆盖逻辑生效。
     fake.options = lambda: (("none", "仅手动启动"), ("registry", "开机自启"))
     fake.current_exe = lambda: r"C:\fake\BiliYTPlayer.exe"
 
@@ -129,6 +131,12 @@ def verify_meta(bridge):
     eq("meta.quality 11 档", len(meta["quality"]), 11)
     eq("meta.quality 首项", meta["quality"][0]["key"], "auto")
     eq("meta.autostart 2 项", [a["key"] for a in meta["autostart"]], ["none", "registry"])
+    # 用户要求：下拉选项文字是「禁止自启 / 开启自启」，不是 app/autostart.py 的原文
+    eq("meta.autostart 标签被覆盖成用户措辞",
+       [a["label"] for a in meta["autostart"]], ["禁止自启", "开启自启"])
+    eq("meta.theme 三项", [t["key"] for t in meta["theme"]], ["dark", "light", "system"])
+    eq("meta.theme 中文标签", [t["label"] for t in meta["theme"]],
+       ["深色模式", "浅色模式", "跟随系统"])
 
 
 def verify_general(cfg_dir: Path, Bridge):
@@ -158,6 +166,73 @@ def verify_general(cfg_dir: Path, Bridge):
     bridge.saveGeneral({"close_action": "close", "ask_on_close": True, "autostart_mode": "none"})
     eq("general.conf close_action=close", conf_value(cfg_dir / "general.conf", "close_action"), "close")
     eq("general.conf ask_on_close=true", conf_value(cfg_dir / "general.conf", "ask_on_close"), "true")
+
+
+def verify_theme(cfg_dir: Path, Bridge):
+    """主题三选一：落盘 + 真的应用到 Qt + themeChanged 信号 + 脏值回退。
+
+    必须有活着的 QGuiApplication 才能验 styleHints().colorScheme()。
+    平台必须是 windows：**offscreen QPA 忽略 setColorScheme**（实测恒为 Unknown），
+    用它验这项会误报失败。这里不显示任何窗口，只是建个应用对象。
+    """
+    print("\n-- 主题（dark/light/system）--")
+    # 不能用 setdefault：调用方可能已经设过 offscreen，那样这项永远验不过
+    os.environ["QT_QPA_PLATFORM"] = "windows"
+    os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    QQuickStyle.setStyle("FluentWinUI3")
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    bridge = Bridge(cfg_dir)
+
+    # 收集 themeChanged
+    seen = []
+    try:
+        bridge.themeChanged.connect(lambda name: seen.append(name))
+    except Exception as e:                            # noqa: BLE001
+        check("themeChanged 信号可连接", False, repr(e))
+
+    # system 的期望值不是 Unknown：Qt 会把 Unknown 「解析」成系统当前值再报回来
+    # （实测 Windows 浅色系统下 setColorScheme(Unknown) → colorScheme() == Light）。
+    # 所以这里先记录系统真值，再断言回落到它。
+    hints = app.styleHints()
+    hints.setColorScheme(Qt.ColorScheme.Dark)
+    hints.setColorScheme(Qt.ColorScheme.Unknown)
+    system_scheme = hints.colorScheme()
+    check("system 目标值可确定（Unknown 已解析为系统值）",
+          system_scheme in (Qt.ColorScheme.Light, Qt.ColorScheme.Dark),
+          f"got={system_scheme}")
+
+    cases = [("dark", Qt.ColorScheme.Dark), ("light", Qt.ColorScheme.Light),
+             ("system", system_scheme)]
+    for want, qt_want in cases:
+        r = bridge.saveGeneral({"theme": want})
+        check(f"theme={want} 保存 ok", r.get("ok") is True, str(r))
+        eq(f"general.conf theme={want}", conf_value(cfg_dir / "general.conf", "theme"), want)
+        got = hints.colorScheme()
+        check(f"theme={want} 已应用到 Qt", got == qt_want, f"got={got} want={qt_want}")
+        eq(f"theme={want} 回读一致", bridge.pageData("general")["theme"], want)
+
+    # 三次都变了 → 三条 themeChanged
+    eq("themeChanged emit 次数", len(seen), 3)
+    eq("themeChanged 参数序列", seen, ["dark", "light", "system"])
+
+    # 重复保存同一值不再 emit（避免主窗口无谓刷新）
+    bridge.saveGeneral({"theme": "system"})
+    eq("重复值不重复 emit", len(seen), 3)
+
+    # 脏值 → 回退 system 并落盘
+    bridge.saveGeneral({"theme": "purple"})
+    eq("非法 theme 落盘为 system", conf_value(cfg_dir / "general.conf", "theme"), "system")
+    eq("非法 theme 回读 system", bridge.pageData("general")["theme"], "system")
+
+    # 无 theme 键时不改动已有值
+    bridge.saveGeneral({"theme": "dark"})
+    bridge.saveGeneral({"close_action": "close"})
+    eq("不传 theme 时保留原值", bridge.pageData("general")["theme"], "dark")
 
 
 def verify_danmaku(cfg_dir: Path, Bridge):
@@ -360,17 +435,18 @@ def verify_render():
     check("_shot_wrapper.qml 存在", wrapper.is_file(), str(wrapper))
 
     # Fluent 样式的深浅色由 Application.styleHints.colorScheme 决定，offscreen
-    # QPA 下不可写（恒为 Unknown → 控件按深色画），所以这里用 windows QPA 跑截图。
+    # QPA 下不可写（恒为 Unknown → 控件按深色画，ComboBox/RadioButton 会截成空白），
+    # 所以这里用 windows QPA 跑截图。
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "windows"
     env["QT_QPA_FONTDIR"] = r"C:\Windows\Fonts"
 
     for scheme in ("light", "dark"):
-        out = ROOT / f"_settings_{scheme}.png"
+        out = ROOT / f"_settings_general_{scheme}.png"
         if out.exists():
             out.unlink()
         cmd = [sys.executable, str(ROOT / "_shot.py"), str(wrapper),
-               str(out), "980", "720", scheme]
+               str(out), "980", "720", scheme, "general"]
         try:
             proc = subprocess.run(cmd, cwd=str(ROOT), env=env, capture_output=True, text=True,
                                   encoding="utf-8", errors="replace", timeout=90)
@@ -456,6 +532,57 @@ def verify_qml_roundtrip(cfg_dir: Path):
     eq("QML 保存后 general.conf close_action",
        conf_value(cfg_dir / "general.conf", "close_action"), "close")
 
+    # ---- 通用页的新控件：主题三选一 + 自启下拉 ----
+    gen = win.page("general")
+    for name in ("themeSystem", "themeLight", "themeDark",
+                 "closeActionClose", "closeActionTray", "askOnClose", "autostartCombo"):
+        found = gen.findChildren(object, name)
+        check(f"通用页有 objectName={name}", len(found) == 1,
+              f"找到 {len(found)} 个")
+
+    # 主题单选：切到「深色模式」再 save，应落盘 dark
+    radios = {n: gen.findChildren(object, n)[0] for n in
+              ("themeSystem", "themeLight", "themeDark") if gen.findChildren(object, n)}
+    if len(radios) == 3:
+        import app.theme as theme_mod
+        theme_mod.apply_theme("light")
+        radios["themeDark"].setProperty("checked", True)
+        gen.save()
+        eq("QML 选深色 → conf theme=dark",
+           conf_value(cfg_dir / "general.conf", "theme"), "dark")
+        from PySide6.QtCore import Qt as _Qt
+        check("QML 选深色 → Qt 已切深色",
+              app.styleHints().colorScheme() == _Qt.ColorScheme.Dark,
+              str(app.styleHints().colorScheme()))
+
+        radios["themeSystem"].setProperty("checked", True)
+        gen.save()
+        eq("QML 选跟随系统 → conf theme=system",
+           conf_value(cfg_dir / "general.conf", "theme"), "system")
+
+    # 自动启动下拉的选项文字是用户措辞
+    combo = gen.findChildren(object, "autostartCombo")
+    if combo:
+        model = combo[0].property("model")
+        labels = []
+        try:
+            for i in range(combo[0].property("count")):
+                labels.append(model[i]["label"] if isinstance(model, list) else None)
+        except Exception:
+            pass
+        if labels and all(labels):
+            eq("QML 自启下拉标签", labels, ["禁止自启", "开启自启"])
+
+    # 导航栏底部提示文案
+    hint = [o for o in win.findChildren(object)
+            if o.metaObject().className().startswith("QQuickText")
+            and "即刻生效" in str(o.property("text") or "")]
+    check("导航栏提示改为「保存后即刻生效…」", len(hint) >= 1,
+          f"找到 {len(hint)} 条")
+    check("导航栏提示不再用旧文案",
+          not [o for o in win.findChildren(object)
+               if "改完保存即生效" in str(o.property("text") or "")], "")
+
     win.close()
     engine.deleteLater()
 
@@ -473,19 +600,21 @@ def main() -> int:
     def Bridge(config_dir):
         return SettingsBridge(config_dir)
 
+    # 顺序有讲究，别改：**渲染必须第一个跑**。
+    # 渲染是起子进程做离屏截图；主题检查会在本进程里建 QGuiApplication，
+    # 父进程一旦有 Qt 应用，再起 windows 平台的 Qt 子进程就会死锁在事件循环里
+    # （实测 90s 不返回，且 stdout 被继承时会连带挂住父进程）。
+    verify_render()
+
     with tempfile.TemporaryDirectory(prefix="biliyt_settings_") as tmp:
         base = Path(tmp)
         verify_meta(Bridge(base / "meta"))
         verify_general(base / "general", Bridge)
+        verify_theme(base / "theme", Bridge)      # 这一步会建 QGuiApplication
         verify_danmaku(base / "danmaku", Bridge)
         verify_subtitle(base / "subtitle", Bridge)
         verify_sponsor(base / "sponsor", Bridge)
         verify_account(base / "account", Bridge)
-
-    # 顺序有讲究：渲染要先跑。渲染是起子进程做离屏截图，而 QML 链路检查会在
-    # 本进程里建 QGuiApplication；父进程已有 Qt 应用时再起 windows 平台的 Qt
-    # 子进程会死锁在事件循环里（实测 90s 不返回）。
-    verify_render()
 
     with tempfile.TemporaryDirectory(prefix="biliyt_settings_qml_") as tmp:
         verify_qml_roundtrip(Path(tmp))

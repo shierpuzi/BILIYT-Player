@@ -41,7 +41,16 @@ from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 APP_NAME = "BiliYTPlayer"
-UI_DIR = Path(__file__).resolve().parent / "ui"
+
+# QML 目录定位：
+#   源码运行 → 脚本同级 ui/
+#   PyInstaller 打包 → sys._MEIPASS/ui（datas 里的 (ui, "ui") 会解到这里）
+# 注意 legacy/ 与 app/ 走的是同一套逻辑（bridge.py 里也是这么算的）。
+if getattr(sys, "frozen", False):
+    _RUNTIME_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+else:
+    _RUNTIME_DIR = Path(__file__).resolve().parent
+UI_DIR = _RUNTIME_DIR / "ui"
 
 
 def _panic_log(exc: BaseException) -> Path:
@@ -68,6 +77,21 @@ def main() -> int:
     app.setApplicationDisplayName("剪贴板直连播放器")
     app.setQuitOnLastWindowClosed(False)   # 最小化到托盘时窗口全隐藏也不能退出
 
+    # ---- 启动即应用已保存的深浅色（必须在 engine.load() 之前）----
+    # Application.styleHints.colorScheme 单一开关同时驱动 Fluent 控件和 Theme.dark，
+    # 晚于 load() 设置会让第一帧闪一下浅色再变深色，所以放在这里。
+    def _apply_saved_theme():
+        try:
+            from app.app_config import load_config
+            from app.theme import apply_theme
+            from ui.bridge import CONFIG_DIR as _CFG
+            return apply_theme(load_config(_CFG).get("theme", "system"))
+        except Exception as e:
+            print(f"[!] 主题应用失败（用系统默认）: {e}", file=sys.stderr)
+            return "system"
+
+    _theme_now = _apply_saved_theme()
+
     from ui.bridge import UiBridge
 
     bridge = UiBridge()
@@ -77,6 +101,7 @@ def main() -> int:
     # "Cannot read property 'paused' of null"（实测，属于退出噪音但会淹掉真错误）。
     # 挂到 app 上让生命周期覆盖整个进程。
     app._dsh_bridge = bridge
+    bridge._log(f"[*] 主题: {_theme_now}")
 
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(UI_DIR))
@@ -91,6 +116,20 @@ def main() -> int:
         # 同 bridge：保活到进程结束，避免析构阶段 QML 绑定读到 null
         app._dsh_settings_bridge = settings_bridge
         engine.rootContext().setContextProperty("settingsBridge", settings_bridge)
+
+        # 设置页里改主题 → 立即作用到整个进程（含主窗口与设置窗口自身）。
+        # apply_theme 只动 styleHints，Theme.dark 与 Fluent 控件会自己跟着刷新；
+        # 这里补一次 config 重读，让主窗口的 general_cfg 也同步。
+        def _on_theme_changed(theme: str):
+            try:
+                from app.theme import apply_theme
+                applied = apply_theme(theme)
+                bridge.general_cfg = dict(bridge.general_cfg, theme=applied)
+                bridge._log(f"[*] 主题已切换: {applied}")
+            except Exception as e:
+                bridge._log(f"[!] 主题切换失败: {e}")
+
+        settings_bridge.themeChanged.connect(_on_theme_changed)
     except Exception as e:
         bridge._log(f"[!] 设置模块加载失败（设置页不可用）: {e}")
 

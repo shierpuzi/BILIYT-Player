@@ -97,8 +97,16 @@ _FALLBACK_QUALITY = (
     ("80", "1080P"), ("64", "720P"), ("32", "480P"), ("16", "360P"),
 )
 
-#: app/autostart.py 尚未就绪时的兜底
-_FALLBACK_AUTOSTART = (("none", "仅手动启动"), ("registry", "开机自启"))
+#: app/autostart.py 尚未就绪时的兜底（标签与 shell-agent 的实现保持一致）
+_FALLBACK_AUTOSTART = (("none", "禁止自启"), ("registry", "开启自启"))
+
+#: 自启模式 → 设置页显示文字。覆盖 app/autostart.py 的 "仅手动启动 / 开机自启"：
+#: 区块标题已经是「启动设置」、行标签是「自动启动」，这里再写「开机自启」
+#: 会变成三重重复，且「仅手动启动」对普通用户不够直白。
+_AUTOSTART_LABELS = {"none": "禁止自启", "registry": "开启自启"}
+
+#: app/theme.py 尚未就绪时的兜底
+_FALLBACK_THEME = (("dark", "深色模式"), ("light", "浅色模式"), ("system", "跟随系统"))
 
 #: SponsorBlock 四档的中文标签（与 legacy 的 tier_labels 一致）
 _TIER_LABELS = {
@@ -119,6 +127,7 @@ class SettingsBridge(QObject):
     configChanged = Signal()          # 任何配置被保存后 emit（Lead 收到后重载 4 份 cfg）
     requestClose = Signal()           # 设置窗口请求关闭（QML 侧直接 close() 即可，保留接口）
     sessionStatus = Signal(bool, str)  # SESSDATA 校验结果（成功, 说明）
+    themeChanged = Signal(str)        # 主题被保存并应用后 emit（规范化后的 light/dark/system）
 
     def __init__(self, config_dir: Path, log=None) -> None:
         super().__init__()
@@ -151,6 +160,12 @@ class SettingsBridge(QObject):
         cfg = _mod("app.app_config").load_config(self.config_dir, self.log)
         # 附带注册表的真实状态：配置说 registry 但项被外部删掉时，UI 能提示出来
         cfg["autostart_enabled"] = self._autostart_enabled(cfg.get("autostart_mode", "none"))
+        # 源码运行时 current_exe() 为 None，写注册表没有意义 → UI 显示
+        # 「打包为 exe 后可开启」而不是干巴巴的「已关闭」
+        cfg["autostart_available"] = self._autostart_available()
+        # theme 已由 app_config 归一化（走 app/theme.normalize），这里再兜一次：
+        # app_config 缺失该键时（老版本 conf）也得给 UI 一个合法值
+        cfg["theme"] = self._normalize_theme(cfg.get("theme"))
         return cfg
 
     def _danmaku(self) -> dict:
@@ -193,7 +208,20 @@ class SettingsBridge(QObject):
             "tiers": [{"key": t, "label": _TIER_LABELS.get(t, t)} for t in sb.TIERS],
             "quality": [{"key": k, "label": v} for k, v in self._quality_options()],
             "autostart": [{"key": k, "label": v} for k, v in self._autostart_options()],
+            "theme": [{"key": k, "label": v} for k, v in self._theme_options()],
         }
+
+    def _theme_options(self) -> tuple:
+        try:
+            return tuple(_mod("app.theme").THEME_OPTIONS)
+        except Exception:
+            return _FALLBACK_THEME
+
+    def _normalize_theme(self, name) -> str:
+        try:
+            return _mod("app.theme").normalize(name)
+        except Exception:
+            return name if name in ("light", "dark") else "system"
 
     # ------------------------------------------------------------ 通用页 ----
 
@@ -215,6 +243,16 @@ class SettingsBridge(QObject):
             if quality in {k for k, _ in self._quality_options()}:
                 cfg["quality"] = quality
 
+        # 主题：归一化 → 立即应用 → 记下是否变了（变了才 emit，避免主窗口无谓刷新）
+        theme_before = cfg.get("theme", "system")
+        if "theme" in d:
+            cfg["theme"] = self._normalize_theme(d.get("theme"))
+            try:
+                _mod("app.theme").apply_theme(cfg["theme"])
+            except Exception as e:
+                self.log(f"[!] 主题应用失败（设置已保存，重启后生效）: {e}")
+        theme_after = cfg.get("theme", "system")
+
         extra = ""
         if "autostart_mode" in d:
             mode = str(d.get("autostart_mode") or "none")
@@ -230,6 +268,8 @@ class SettingsBridge(QObject):
         if not ac.save_config(self.config_dir, cfg):
             return {"ok": False, "msg": "保存失败，请检查文件权限"}
         self.configChanged.emit()
+        if theme_after != theme_before:
+            self.themeChanged.emit(theme_after)
         return {"ok": True, "msg": "已保存" + extra}
 
     # ------------------------------------------------------------ 画质页 ----
@@ -243,11 +283,17 @@ class SettingsBridge(QObject):
     # -------------------------------------------------------- 开机自启 ----
 
     def _autostart_options(self) -> tuple:
+        """自启下拉选项。
+
+        取值来自 app/autostart.py 的 options()（shell-agent 的文件，不改它）；
+        **显示文字在这里覆盖**成用户要求的说法（「禁止自启 / 开启自启」），
+        避免设置页里「开机自启 → 启动方式 → 开机自启」的三重重复。
+        """
         try:
-            opts = tuple(_mod("app.autostart").options())
+            raw = tuple(_mod("app.autostart").options()) or _FALLBACK_AUTOSTART
         except Exception:
-            return _FALLBACK_AUTOSTART
-        return opts or _FALLBACK_AUTOSTART
+            raw = _FALLBACK_AUTOSTART
+        return tuple((key, _AUTOSTART_LABELS.get(key, label)) for key, label in raw)
 
     def _apply_autostart(self, mode: str) -> tuple:
         """调 app/autostart.py 的 apply()；模块没就绪时返回 (False, 可读原因)。"""
@@ -266,6 +312,13 @@ class SettingsBridge(QObject):
     def _autostart_enabled(self, mode: str) -> bool:
         try:
             return bool(_mod("app.autostart").is_enabled(mode))
+        except Exception:
+            return False
+
+    def _autostart_available(self) -> bool:
+        """能否真正写自启：源码运行时 current_exe() 为 None，只能打包后用。"""
+        try:
+            return bool(_mod("app.autostart").current_exe())
         except Exception:
             return False
 

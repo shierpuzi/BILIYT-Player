@@ -162,7 +162,7 @@ Window {
                 Text {
                     Layout.fillWidth: true
                     Layout.leftMargin: 6
-                    text: "改完保存即生效，多数项播放下一个视频时应用。"
+                    text: "保存后即刻生效（部分播放设置将在下一个视频中应用）。"
                     color: Theme.text3
                     font.pixelSize: 10
                     wrapMode: Text.WordWrap

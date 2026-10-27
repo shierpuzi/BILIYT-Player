@@ -31,10 +31,16 @@ _hidden_imports = [
     "danmaku",
     "subtitle",
     # 新增应用层
+    # 注意：必须同时列出包本体 `app` / `ui`，只列子模块时 PyInstaller 不会把
+    # 包的其余成员收集进去（实测第一版 exe 里 `app/` 完全缺失 → 打包后启动即
+    # 静默无窗口，因为 --windowed 下 import 失败没有任何可见输出）。
+    "app",
     "app.app_config",
     "app.quality",
     "app.autostart",
     "app.tray",
+    "app.theme",
+    "ui",
     "ui.bridge",
     "ui.settings_bridge",
     # PySide6 子模块（QML 运行时按需 import，静态分析拿不全）
@@ -78,10 +84,28 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 标准库测试/文档
+        # ---- 标准库测试/文档 ----
         "tkinter",          # QML 版不用 tkinter
         "test", "unittest", "pydoc", "doctest", "lib2to3", "distutils",
-        # 明确不用的重型 Qt 模块（excludes 只影响 Python 模块，DLL 靠下面过滤）
+        # ---- 本机 site-packages 里的重型第三方包 ----
+        # 本机 Python 环境装了 numpy/PyQt5/pygame/PIL/scipy/matplotlib/pandas 等
+        # 一大堆与本项目无关的包，PyInstaller 的 hook 会顺着模块图把它们全拖进来
+        # （实测第一版 exe 123 MB，其中 numpy.libs/libopenblas 单个就 36 MB，
+        # 还混进了整个 PyQt5 和 pygame）。项目代码对这些的引用是零 —— 核对过
+        # legacy/{danmaku,sponsorblock,subtitle,mpv_osc,bili_clipboard_dolby}.py
+        # 与 ui/ app/ 的全部 import，只有 requests / pyperclip / dotenv / PySide6。
+        "numpy", "scipy", "pandas", "matplotlib", "sympy", "sklearn",
+        "PyQt5", "PyQt6", "PySide2", "pygame", "PIL", "Pillow",
+        "cryptography", "OpenSSL", "nacl", "bcrypt",
+        "IPython", "jupyter", "notebook", "nbformat",
+        "pytest", "hypothesis", "sphinx", "docutils",
+        "cv2", "imageio", "skimage", "tifffile",
+        "lxml", "bs4", "html5lib", "soupsieve",
+        "zmq", "tornado", "pika", "redis", "pymongo",
+        "sqlalchemy", "alembic",
+        "setuptools", "pkg_resources", "wheel", "pip",
+        "paste", "paste.deploy", "repoze", "repoze.lru",
+        # ---- 明确不用的重型 Qt 模块（excludes 只影响 Python 模块，DLL 靠下面过滤）----
         "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
         "PySide6.QtWebEngineQuick", "PySide6.QtPdf", "PySide6.QtPdfWidgets",
         "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DAnimation",
@@ -126,10 +150,60 @@ _DROP_FRAGMENTS = [
     "opengl32sw",
     # 插件目录里的重型后端
     "qtvirtualkeyboard", "qmltooling", "qt6virtualkeyboard",
+    # 未使用的 QtQuick.Controls 样式（Fluent 只用 FluentWinUI3 + Fusion + Basic）
+    "qtquickcontrols2imagine", "qtquickcontrols2material",
+    "qtquickcontrols2universal", "qtquickcontrols2windows",
+    # 未使用的 Qt 子系统（体积排行里剩下的几个）
+    "qt6graphs", "qt6location", "qt6quickdialogs2quickimpl",
+    "qt6quickdialogs2", "qt6positioningquick",
+    # Python 侧 OpenGL 绑定（QML 渲染走 RHI，不经过这个模块）
+    "qtopenGL.pyd",
 ]
 
 #: 不能裁的样式（Fluent 依赖 Fusion 作为回退，Basic 是 Fluent 的实现基础）
-_KEEP_STYLES = ("fusion", "basic", "fluentwinui3", "material", "universal", "imagine", "windows")
+#: README 实测：裁 Fusion → 运行时 LOAD FAIL（静默无有用信息）；裁 Basic → 控件回退
+_KEEP_STYLES = ("fusion", "basic", "fluentwinui3")
+
+#: Controls/ 下的非样式子目录，必须保留：
+#:   impl     —— 所有 Fluent/Basic 控件的实现，缺了每个控件都报
+#:               module "QtQuick.Controls.impl" is not installed
+#:   designer —— Qt Designer 集成
+_KEEP_EXTRA_DIRS = ("impl", "designer")
+
+#: 按路径前缀丢弃的二进制/数据（本机 site-packages 里的无关重包）
+#: excludes 对「已被 hook 复制进 binaries 的 DLL/pyd」同样无效，必须按路径再滤一遍：
+#:   numpy.libs/libopenblas...dll  36.4 MB
+#:   cryptography/.../_rust.pyd    9.4 MB
+#:   PIL/_avif...pyd               7.5 MB
+#:   PyQt5/Qt5/bin/*.dll          ~30 MB
+_DROP_PATH_PREFIXES = (
+    "numpy", "numpy.libs", "scipy", "pandas", "matplotlib", "mpl_toolkits",
+    "pyqt5", "pyqt6", "pyside2", "pygame", "pil", "pillow",
+    "cryptography", "openssl", "nacl", "bcrypt", "cffi", "_cffi_backend",
+    "ipython", "jupyter", "notebook", "nbformat", "nbconvert",
+    "pytest", "_pytest", "hypothesis", "sphinx", "docutils",
+    "cv2", "imageio", "skimage", "tifffile",
+    "lxml", "bs4", "html5lib", "soupsieve",
+    "zmq", "tornado", "pika", "redis", "pymongo",
+    "sqlalchemy", "alembic", "paste", "repoze",
+    "setuptools", "pkg_resources", "wheel", "pip", "_distutils_hack",
+    "test", "unittest", "lib2to3", "distutils",
+    "tkinter", "_tkinter", "tcl", "tk",
+)
+
+
+def _drop_path(dest: str) -> str | None:
+    """命中返回丢弃原因，否则 None。只看包路径前缀，不误伤 Qt/python 本体。"""
+    low = dest.lower().replace("\\", "/")
+    head = low.split("/", 1)[0]
+    for pref in _DROP_PATH_PREFIXES:
+        if head == pref or head.startswith(pref + ".") or head.startswith(pref + "/"):
+            return pref
+    # cryptography 的 .pyd 在 PySide6 之外，但路径里含 .dist-info 的跳过
+    if ".dist-info/" in low or ".egg-info/" in low:
+        return "meta"
+    return None
+
 
 _kept, _dropped = [], []
 for entry in a.binaries:
@@ -137,8 +211,20 @@ for entry in a.binaries:
     if any(frag in dest for frag in _DROP_FRAGMENTS):
         _dropped.append(entry[0])
         continue
+    if _drop_path(entry[0]):
+        _dropped.append(entry[0])
+        continue
     _kept.append(entry)
 a.binaries = _kept
+
+# datas 里同样清一遍（site-packages 的 .dist-info / 测试数据）
+_kept_datas, _dropped_datas = [], []
+for entry in a.datas:
+    if _drop_path(entry[0]):
+        _dropped_datas.append(entry[0])
+        continue
+    _kept_datas.append(entry)
+a.datas = _kept_datas
 
 # ============================================================
 # 手动过滤 QtQuick/Controls 的样式目录（Material/Universal/Imagine/Windows 可裁）
@@ -147,9 +233,14 @@ def _keep_qml_dir(dest: str) -> bool:
     """QtQuick/Controls/<Style> 下只保留 Fluent 需要的样式。"""
     low = dest.lower().replace("\\", "/")
     if "qtquick/controls/" in low:
-        seg = low.split("qtquick/controls/", 1)[1].split("/")[0]
-        if seg and seg not in _KEEP_STYLES:
-            return False
+        tail = low.split("qtquick/controls/", 1)[1]
+        # 只有「子目录」才代表样式名。Controls/ 根下的文件（qmldir /
+        # plugins.qmltypes / qtquickcontrols2plugin.dll）是模块本身，丢了会
+        # 报 plugin "qtquickcontrols2plugin" not found，整个界面加载失败。
+        if "/" in tail:
+            seg = tail.split("/")[0]
+            if seg and seg not in _KEEP_STYLES and seg not in _KEEP_EXTRA_DIRS:
+                return False
     return True
 
 

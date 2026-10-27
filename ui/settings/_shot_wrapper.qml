@@ -60,12 +60,17 @@ SettingsWindow {
     }
 
     // ---- 桩数据（真实界面里的取值示例）----
+    // theme 按截图方案给：light 图里「浅色模式」应勾上，dark 图里「深色模式」应勾上，
+    // 这样截图本身就能证明主题单选是通的。
     readonly property var generalCfg: ({
         close_action: "tray",
         ask_on_close: true,
         autostart_mode: "registry",
         quality: "126",
-        autostart_enabled: true
+        autostart_enabled: true,
+        autostart_available: true,
+        theme: (typeof __forceScheme !== "undefined" && __forceScheme === "dark")
+               ? "dark" : "light"
     })
 
     readonly property var danmakuCfg: ({
@@ -141,7 +146,11 @@ SettingsWindow {
             { key: "16", label: "360P" }
         ],
         autostart: [
-            { key: "none", label: "仅手动启动" }, { key: "registry", label: "开机自启" }
+            { key: "none", label: "禁止自启" }, { key: "registry", label: "开启自启" }
+        ],
+        theme: [
+            { key: "dark", label: "深色模式" }, { key: "light", label: "浅色模式" },
+            { key: "system", label: "跟随系统" }
         ]
     })
 }

@@ -20,7 +20,7 @@ show/hide/setTip/notify 全部静默 no-op，不抛异常。
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QPointF, Qt, Signal
+from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -122,22 +122,30 @@ class Tray(QObject):
         return self._menu.actions() if self._menu is not None else []
 
     # ---- 对外 ----
+    # 必须加 @Slot：QML 只能调用注册到元对象系统的方法（信号槽 / Q_INVOKABLE /
+    # @Slot）。裸 def 在 Python 侧能调，但 QML 侧会报
+    # "Property 'hide' of object Tray(...) is not a function"（实测）。
+    @Slot()
     def show(self) -> None:
         """显示托盘图标。无托盘 / 无 QApplication 时静默返回。"""
         if self._icon is None or not self.available:
             return
         self._icon.show()
 
+    @Slot()
     def hide(self) -> None:
         if self._icon is None:
             return
         self._icon.hide()
 
+    @Slot(str)
     def setTip(self, text: str) -> None:
         self._tip = text or "BiliYTPlayer"
         if self._icon is not None:
             self._icon.setToolTip(self._tip)
 
+    @Slot(str, str)
+    @Slot(str, str, int)
     def notify(self, title: str, body: str, msecs: int = 3000) -> None:
         """气泡提示；无托盘时不弹（调用也不报错）。"""
         if self._icon is None or not self.available:
