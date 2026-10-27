@@ -49,3 +49,7 @@ Desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# ui-kit 的演示 exe 不进仓库（48 MB），用 Releases 分发
+ui-kit/*.exe
+
